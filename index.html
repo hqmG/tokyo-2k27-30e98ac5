@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Tokyo 2027 – Resplan</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  /* Färger för ljust och mörkt läge */
+  :root {
+    --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; --heading: #78716c;
+    --panel: #fff; --border: #e7e5e4; --line: #d6d3d1; --accent: #0f766e;
+    --dot: #fff; --btn: #fff; --btn-border: #d6d3d1; --band: rgba(0,0,0,.03);
+  }
+  body.dark {
+    --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --heading: #58a6ff;
+    --panel: #161b22; --border: #30363d; --line: #30363d; --accent: #58a6ff;
+    --dot: #161b22; --btn: #21262d; --btn-border: #30363d; --band: rgba(255,255,255,.03);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+  a { color: var(--heading); }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 13px; margin: 22px 0 8px; color: var(--heading); text-transform: uppercase; letter-spacing: .04em; }
+
+  .header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  .switch-wrap { cursor: pointer; user-select: none; }
+  .switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: var(--line); border-radius: 22px; transition: .2s; }
+  .slider::before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+  .switch input:checked + .slider { background: var(--accent); }
+  .switch input:checked + .slider::before { transform: translateX(18px); }
+
+  #map { height: 420px; border-radius: 10px; border: 1px solid var(--border); }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
+  .scroll { overflow-x: auto; }
+  .canvas { position: relative; height: 320px; }
+  .axis { position: absolute; top: 180px; height: 2px; background: var(--line); }
+
+  .band { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--border); }
+  .band.alt { background: var(--band); }
+  .bandlabel { position: absolute; top: 8px; left: 8px; font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+
+  .leg-bar { position: absolute; top: 179px; height: 0; border-top: 3px solid; }
+  .leg-label { position: absolute; top: 186px; transform: translateX(-50%); font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+  .node { position: absolute; top: 180px; width: 0; cursor: pointer; }
+  .node .dot { position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 50%; background: var(--dot); border: 3px solid var(--accent); }
+  .node.active .dot { background: var(--accent); }
+  .node .stem { position: absolute; left: 0; width: 1px; background: var(--line); }
+  .node.up .stem { bottom: 8px; }
+  .node.down .stem { top: 8px; }
+  .node .label { position: absolute; left: 0; transform: translateX(-50%); white-space: nowrap; text-align: center; font-size: 12px; line-height: 1.25; }
+  .node .label b { display: block; font-size: 13px; color: var(--fg); }
+  .node .label span { color: var(--muted); }
+
+  .zoombar { display: flex; gap: 6px; margin: 6px 0 0; }
+  .zoombar button { font: inherit; min-width: 34px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--btn-border); background: var(--btn); color: var(--fg); cursor: pointer; }
+
+  .zoombar .cities { margin-left: auto; display: flex; gap: 6px; }
+
+  .pgroup { margin-bottom: 14px; }
+  .pcard { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
+  .pname { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; }
+  .rating { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; font-size: 13px; font-weight: normal; color: var(--muted); }
+  .stars { position: relative; display: inline-block; font-size: 13px; letter-spacing: 1px; color: var(--line); }
+  .stars .fill { position: absolute; left: 0; top: 0; overflow: hidden; white-space: nowrap; color: #f5b301; }
+  .pcard.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .pcard a { font-size: 13px; }
+  .psummary { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  #proposals .rating { color: var(--fg); }
+  .empty { color: var(--muted); }
+  .countdown { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; padding: 16px; margin-bottom: 4px; border-radius: 14px; border: 1px solid var(--border); background: linear-gradient(135deg, var(--panel), var(--band)); }
+  .cd-unit { min-width: 84px; text-align: center; padding: 10px 8px 8px; border-radius: 12px; background: var(--bg); border: 1px solid var(--border); box-shadow: inset 0 1px 0 rgba(255,255,255,.04); }
+  .cd-num { display: block; font-size: 32px; font-weight: 700; line-height: 1.1; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .cd-lbl { display: block; margin-top: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .journey { margin: 14px 0 0; padding: 8px 12px 4px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel); }
+  .journey svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .route-line { stroke: var(--accent); stroke-width: 3; stroke-dasharray: 6 6; animation: march 1.2s linear infinite; }
+  .route-flown { stroke: var(--accent); stroke-width: 3; }
+  .stops circle { fill: var(--dot); stroke: var(--accent); stroke-width: 3; }
+  .stops text { fill: var(--muted); font-size: 10px; text-anchor: middle; }
+  .dleg { display: flex; align-items: center; gap: 8px; margin: 4px 0 12px; }
+  .dleg > div:not(.dleg-line) { text-align: center; }
+  .dleg b { display: block; font-size: 18px; }
+  .dleg > div:not(.dleg-line) span { font-size: 12px; color: var(--muted); }
+  .dleg-line { flex: 1; position: relative; border-top: 3px solid; }
+  .dleg-line span { position: absolute; left: 50%; top: -9px; transform: translateX(-50%); padding: 0 6px; font-size: 11px; color: var(--muted); background: var(--panel); }
+  .plane { font-size: 16px; fill: var(--accent); text-anchor: middle; }
+  @keyframes march { to { stroke-dashoffset: -12; } }
+  @media (prefers-reduced-motion: reduce) { .route-line { animation: none; } }
+  .fx { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 50; }
+  .fx i { position: absolute; border-radius: 50%; opacity: 0; animation: burst 1.5s cubic-bezier(.1,.7,.3,1) forwards; }
+  @keyframes burst { 0% { transform: translate(0,0) scale(.3); opacity: 1; } 70% { opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) scale(.1); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .fx { display: none; } }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .tabs button { font: inherit; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--btn-border); background: var(--btn); color: var(--fg); cursor: pointer; }
+  .tabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #detail { margin: 0 0 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  #detail h3 { margin: 0 0 6px; font-size: 17px; }
+  #detail dl { display: grid; grid-template-columns: 120px 1fr; gap: 4px 12px; margin: 8px 0 0; font-size: 14px; }
+  #detail dt { color: var(--muted); }
+  #detail dd { margin: 0; }
+  .plan-loader { display: flex; justify-content: center; padding: 8px 0 16px; color: var(--muted); }
+  .plan-loader span { width: 8px; height: 8px; margin: 0 4px; border-radius: 50%; background: currentColor; animation: plan-dot 1.2s infinite ease-in-out; }
+  .plan-loader span:nth-child(2) { animation-delay: .2s; }
+  .plan-loader span:nth-child(3) { animation-delay: .4s; }
+  @keyframes plan-dot { 0%, 80%, 100% { opacity: .2; } 40% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .plan-loader span { animation: none; } }
+  .plan-error { color: #b91c1c; padding: 12px; margin: 0 0 12px; border: 1px solid #b91c1c; border-radius: 8px; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<main>
+  <div class="header">
+    <h1>Tokyo 2027</h1>
+    <label class="switch-wrap" aria-label="Dark mode">
+      <span class="switch"><input type="checkbox" id="theme"><span class="slider"></span></span>
+    </label>
+  </div>
+<script>
+  // Tema: sätts direkt så att reglaget och sidan alltid stämmer, även innan index.js har laddats
+  (function () {
+    var KEY = 'tokyo2027-theme-v2';
+    var input = document.getElementById('theme');
+    function apply(dark) {
+      document.body.classList.toggle('dark', dark);
+      input.checked = dark;
+      try { localStorage.setItem(KEY, dark ? '1' : '0'); } catch (e) { /* lagring kan vara avstängd */ }
+    }
+    var stored = null;
+    try { stored = localStorage.getItem(KEY); } catch (e) { /* lagring kan vara avstängd */ }
+    apply(stored === null ? true : stored === '1');   // Mörkt läge som standard
+    input.addEventListener('change', function (e) { apply(e.target.checked); });
+  })();
+</script>
+
+  <h2>Countdown</h2>
+  <div id="countdown" class="countdown"></div>
+  <div class="journey" aria-label="Route"><svg id="route" viewBox="0 0 600 84" role="img"></svg></div>
+
+  <h2>Details</h2>
+  <div id="detail"></div>
+
+  <h2>Timeline</h2>
+  <div class="legend" id="legend"></div>
+  <div class="panel scroll" id="panel"><div id="canvas" class="canvas"></div></div>
+  <div class="zoombar">
+    <button id="zoomOut" type="button" aria-label="Zoom out">−</button>
+    <button id="zoomFit" type="button" aria-label="Reset zoom" title="Reset zoom">○</button>
+    <button id="zoomIn" type="button" aria-label="Zoom in">+</button>
+  </div>
+
+  <h2>Map</h2>
+  <div id="map"></div>
+  <div class="zoombar">
+    <button id="mapZoomOut" type="button" aria-label="Zoom out map">−</button>
+    <button id="mapZoomFit" type="button" aria-label="Reset map view" title="Reset map view">○</button>
+    <button id="mapZoomIn" type="button" aria-label="Zoom in map">+</button>
+    <span class="cities">
+      <button type="button" data-city-zoom="Tokyo">Tokyo</button>
+      <button type="button" data-city-zoom="Osaka">Osaka</button>
+      <button type="button" data-city-zoom="Kyoto">Kyoto</button>
+      <button type="button" data-city-zoom="Saigon">Saigon</button>
+    </span>
+  </div>
+
+  <h2>Proposals</h2>
+  <div class="tabs" id="tabs"></div>
+  <div class="tabs" id="city-tabs"></div>
+  <div id="proposals"></div>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="config.js"></script>
+<script src="plan-sheet.js"></script>
+</body>
+</html>
