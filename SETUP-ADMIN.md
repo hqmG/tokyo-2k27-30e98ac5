@@ -31,6 +31,16 @@ Do this after Claude has created the sheet, and before your contributor connects
 
 Do not put booking numbers, passport details, card details or exact addresses in the sheet. Anyone with the link can read it.
 
+### 1.3 Share the Claude project with your contributor
+
+Do this so your contributor gets the same instructions and planning context in their chat with Claude.
+
+1. Open the **Tokyo 2027** project in claude.ai.
+2. Open the project's **Share** option and enter your contributor's email address, the one used for their Claude account.
+3. Your contributor accepts the invitation from their email or from claude.ai.
+
+The project's instructions and documents are visible to everyone in it. Do not add personal details there.
+
 ## Part 2: Publish the web app
 
 Claude prepares the code. You only need to do the steps below yourself, because they involve your GitHub account.
