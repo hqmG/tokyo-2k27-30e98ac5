@@ -87,14 +87,14 @@
   .route-line { stroke: var(--accent); stroke-width: 3; stroke-dasharray: 6 6; animation: march 1.2s linear infinite; }
   .route-flown { stroke: var(--accent); stroke-width: 3; }
   .stops circle { fill: var(--dot); stroke: var(--accent); stroke-width: 3; }
-  .stops text { fill: var(--muted); font-size: 10px; text-anchor: middle; }
+  .stops text { fill: var(--muted); font-size: 14px; text-anchor: middle; }
   .dleg { display: flex; align-items: center; gap: 8px; margin: 4px 0 12px; }
   .dleg > div:not(.dleg-line) { text-align: center; }
   .dleg b { display: block; font-size: 18px; }
   .dleg > div:not(.dleg-line) span { font-size: 12px; color: var(--muted); }
   .dleg-line { flex: 1; position: relative; border-top: 3px solid; }
   .dleg-line span { position: absolute; left: 50%; top: -9px; transform: translateX(-50%); padding: 0 6px; font-size: 11px; color: var(--muted); background: var(--panel); }
-  .plane { font-size: 16px; fill: var(--accent); text-anchor: middle; }
+  .plane { font-size: 22px; fill: var(--accent); text-anchor: middle; }
   @keyframes march { to { stroke-dashoffset: -12; } }
   @media (prefers-reduced-motion: reduce) { .route-line { animation: none; } }
   .fx { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 50; }
@@ -103,7 +103,8 @@
   @media (prefers-reduced-motion: reduce) { .fx { display: none; } }
   .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
   .tabs button { font: inherit; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--btn-border); background: var(--btn); color: var(--fg); cursor: pointer; }
-  .tabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .tabs button.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+  .tabs button.active[data-type="all"], .tabs button.active[data-city="all"] { background: var(--accent); color: #fff; box-shadow: none; }
   #detail { margin: 0 0 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
   #detail h3 { margin: 0 0 6px; font-size: 17px; }
   #detail dl { display: grid; grid-template-columns: 120px 1fr; gap: 4px 12px; margin: 8px 0 0; font-size: 14px; }

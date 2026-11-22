@@ -35,10 +35,8 @@
     const min = Math.round((arrivalMs(it) - absMs(it)) / 60000);
     return `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`;
   };
-  const timeLabel = it => {
-    const range = (it.starttid || '') + (it.sluttid ? ' → ' + it.sluttid : '');
-    return isFlight(it) && it.sluttid ? `${range} (${duration(it)})` : range;
-  };
+  const rangeOf = it => (it.starttid || '') + (it.sluttid ? ' → ' + it.sluttid : '');
+  const timeLabel = it => isFlight(it) && it.sluttid ? `${rangeOf(it)} (${duration(it)})` : rangeOf(it);
   const rowsOf = pairs => pairs.filter(([, v]) => v).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(capitalize(v))}</dd>`).join('');
 
   // ---------- Data ----------
@@ -61,7 +59,10 @@
   const panel = document.getElementById('panel');
   let selectedId = null;
   let selectedProposalId = null;
-  let zoom = 1;
+  // På smala skärmar startar tidslinjen inzoomad så att noderna inte trängs ihop
+  const narrow = window.matchMedia('(max-width: 700px)');
+  const defaultZoom = () => narrow.matches ? 1.5 : 1;
+  let zoom = defaultZoom();
   let mapCity = null;   // staden som valts med knappen under kartan
 
   // ---------- Karta ----------
@@ -155,9 +156,13 @@
   function updateRoute() {
     const svg = document.getElementById('route');
     if (!flights.length) { svg.innerHTML = ''; return; }
+    // Ritas i sin verkliga pixelbredd så att text och symboler får samma storlek som övrig text
+    const W = svg.clientWidth || 600;
+    const H = 84, M = 40;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     const codes = [flights[0].fran.kod, ...flights.map(f => f.till.kod)];
-    const step = 520 / (codes.length - 1);
-    const x = i => 40 + i * step;
+    const step = (W - 2 * M) / (codes.length - 1);
+    const x = i => M + i * step;
     const now = Date.now();
     let plane = x(0);
     flights.forEach((f, i) => {
@@ -165,8 +170,8 @@
       if (now >= arr) plane = x(i + 1);
       else if (now >= dep) plane = x(i) + (x(i + 1) - x(i)) * (now - dep) / ((arr - dep) || 1);
     });
-    svg.innerHTML = `<path class="route-line" d="M40 34 L560 34" fill="none" />
-      <path class="route-flown" d="M40 34 L${plane} 34" fill="none" />
+    svg.innerHTML = `<path class="route-line" d="M${M} 34 L${W - M} 34" fill="none" />
+      <path class="route-flown" d="M${M} 34 L${plane} 34" fill="none" />
       <g class="stops">${codes.map((c, i) => `<circle cx="${x(i)}" cy="34" r="6"/><text x="${x(i)}" y="62">${esc(c)}</text>`).join('')}</g>
       <text class="plane" x="${plane}" y="22">✈</text>`;
   }
@@ -205,8 +210,12 @@
     clearProposalPin();
     // Flygnumret visas redan i flyglinjen, så titeln blir bara rutten
     const title = isFlight(it) ? it.namn.replace(/^\S+\s+/, '') : it.namn;
+    // Transport visar tid och varaktighet på varsin rad
+    const transport = it.typ === 'transport';
     renderDetail(esc(title), rowsOf([
-      ['Status', STATUS_LABELS[it.status] || it.status], ['Date', it.dag], ['Time', timeLabel(it)],
+      ['Status', STATUS_LABELS[it.status] || it.status], ['Date', it.dag],
+      ['Time', transport ? rangeOf(it) : timeLabel(it)],
+      ['Duration', transport && it.sluttid ? duration(it) : ''],
       ['Place', placeOf(it)], ['Price', it.pris], ['Notes', it.anteckn]
     ]), colorOf(it), isFlight(it) ? legOf(it) : '');
     renderTimeline();
@@ -244,7 +253,8 @@
 
     const t0 = nodes[0].ms;
     const hours = (nodes[nodes.length - 1].ms - t0) / HOUR_MS;
-    const width = Math.max((panel.clientWidth - 2) * zoom, 300);
+    // Grundbredden är webbappens bredd (ca 1040 px), så på desktop får den plats utan scroll och på mobil scrollas den
+    const width = Math.max(panel.clientWidth - 2, 1040) * zoom;
     canvas.style.width = width + 'px';
     const scale = hours > 0 ? (width - 2 * EDGE) / hours : 0;
     const xOf = ms => hours > 0 ? EDGE + ((ms - t0) / HOUR_MS) * scale : width / 2;
@@ -311,7 +321,18 @@
   }
   document.getElementById('zoomIn').addEventListener('click', () => setZoom(zoom * 1.5));
   document.getElementById('zoomOut').addEventListener('click', () => setZoom(zoom / 1.5));
-  document.getElementById('zoomFit').addEventListener('click', () => setZoom(1));
+  // Startläget: rätt zoom för skärmen och tidslinjen scrollad till nästa händelse
+  const nextItem = () => sortedItems.find(it => absMs(it) >= Date.now()) || sortedItems[sortedItems.length - 1];
+  function focusNext() {
+    const next = nextItem();
+    const node = next && canvas.querySelector(`.node[data-id="${CSS.escape(next.id)}"]`);
+    if (node) panel.scrollLeft = node.offsetLeft - panel.clientWidth / 2;
+  }
+  document.getElementById('zoomFit').addEventListener('click', () => {
+    zoom = defaultZoom();
+    renderTimeline();
+    focusNext();
+  });
   panel.addEventListener('wheel', e => {
     if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
@@ -329,23 +350,23 @@
     return `<span class="rating"><span class="stars">${stars}<span class="fill" style="width:${(it.rating / 5) * 100}%">${stars}</span></span>${it.rating.toFixed(1)}${count}</span>`;
   }
 
-  // Filter: kategori och stad ("all" = inget filter). Gäller listan och kartan.
-  let proposalFilter = 'all';
-  let cityFilter = 'all';
+  // Filter: kategorier och städer, flera kan väljas. Tom mängd = All. Gäller listan och kartan.
+  const proposalFilter = new Set();
+  const cityFilter = new Set();
   let bookedShown = false;   // bokade noder visas från och med första filterklicket, även för All
   const matchesFilter = it =>
-    (proposalFilter === 'all' || groupOf(it) === proposalFilter) &&
-    (cityFilter === 'all' || inCity(it, cityFilter));
+    (proposalFilter.size === 0 || proposalFilter.has(groupOf(it))) &&
+    (cityFilter.size === 0 || [...cityFilter].some(c => inCity(it, c)));
 
+  const tabsHtml = (attr, set, keys, label) => ['all', ...keys].map(k => {
+    const active = k === 'all' ? set.size === 0 : set.has(k);
+    return `<button type="button" data-${attr}="${esc(k)}" class="${active ? 'active' : ''}">${esc(label(k))}</button>`;
+  }).join('');
   function renderTabs() {
-    const typeKeys = ['all', ...Object.keys(window.CONFIG.types)];
-    document.getElementById('tabs').innerHTML = typeKeys.map(k =>
-      `<button type="button" data-type="${esc(k)}" class="${k === proposalFilter ? 'active' : ''}">${esc(k === 'all' ? 'All' : window.CONFIG.types[k].label)}</button>`
-    ).join('');
-    const cityKeys = ['all', ...CITIES];
-    document.getElementById('city-tabs').innerHTML = cityKeys.map(c =>
-      `<button type="button" data-city="${esc(c)}" class="${c === cityFilter ? 'active' : ''}">${esc(c === 'all' ? 'All' : c)}</button>`
-    ).join('');
+    document.getElementById('tabs').innerHTML = tabsHtml('type', proposalFilter, Object.keys(window.CONFIG.types),
+      k => k === 'all' ? 'All categories' : window.CONFIG.types[k].label);
+    document.getElementById('city-tabs').innerHTML = tabsHtml('city', cityFilter, CITIES,
+      c => c === 'all' ? 'All cities' : c);
   }
 
   // Kartan styrs av två håll: filtren visar förslag (och bokade noder efter första filterklicket),
@@ -404,9 +425,15 @@
     }).join('');
   }
 
+  // Klick väljer eller avväljer ett värde. All rensar hela urvalet
+  const toggleIn = (set, key) => {
+    if (key === 'all') set.clear();
+    else if (set.has(key)) set.delete(key);
+    else set.add(key);
+  };
   function setFilter(kind, city) {
-    if (kind !== undefined) proposalFilter = kind;
-    if (city !== undefined) cityFilter = city;
+    if (kind !== undefined) toggleIn(proposalFilter, kind);
+    if (city !== undefined) toggleIn(cityFilter, city);
     bookedShown = true;
     renderTabs();
     renderProposals();
@@ -542,11 +569,12 @@
   renderProposals();
   renderTimeline();
   // Vid start väljs nästa händelse (eller den sista, om alla har passerat)
-  const upcoming = sortedItems.find(it => absMs(it) >= Date.now()) || sortedItems[sortedItems.length - 1];
+  const upcoming = nextItem();
   if (upcoming) { showDetail(upcoming); drawRoute(upcoming); }
+  focusNext();
   renderCountdown();
   setInterval(renderCountdown, 1000);
   updateRoute();
   setInterval(updateRoute, 60000);
-  window.addEventListener('resize', renderTimeline);
+  window.addEventListener('resize', () => { renderTimeline(); updateRoute(); });
 })();
