@@ -2,7 +2,7 @@
   // ---------- Konstanter ----------
   const HOUR_MS = 3600000, DAY_MS = 86400000;
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const STATUS_LABELS = { idea: 'Proposal', proposed: 'Proposed', booked: 'Booked', approved: 'Approved' };
+  const STATUS_LABELS = { proposal: 'Proposal', booked: 'Booked', approved: 'Approved' };
   const DECIDED = ['booked', 'approved'];   // Beslutade händelser visas på kartan och tidslinjen, övriga under Proposals
   const DAY_UTC_OFFSET = 9;                 // Japan (JST). Byt till 2 för svensk sommartid.
   const MIN_GAP = 84, LEVEL_H = 34, BASE = 42, EDGE = 70;   // tidslinjens avstånd (px)
@@ -36,11 +36,11 @@
     return `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`;
   };
   const rangeOf = it => (it.starttid || '') + (it.sluttid ? ' → ' + it.sluttid : '');
-  const timeLabel = it => isFlight(it) && it.sluttid ? `${rangeOf(it)} (${duration(it)})` : rangeOf(it);
+  const sourceRow = it => linkOf(it) ? `<dt>Source</dt><dd><a href="${esc(linkOf(it))}" target="_blank" rel="noopener">Google Maps ↗</a></dd>` : '';
   const rowsOf = pairs => pairs.filter(([, v]) => v).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(capitalize(v))}</dd>`).join('');
 
   // ---------- Data ----------
-  const allItems = (window.PLAN_MODULES || []).flatMap(m => m.items);
+  const allItems = window.PLAN_ITEMS || [];
   const items = allItems.filter(it => DECIDED.includes(it.status));
   const proposals = allItems.filter(it => !DECIDED.includes(it.status));
   const sortedItems = [...items].sort((a, b) => absMs(a) - absMs(b));
@@ -119,7 +119,13 @@
       .on('click', () => showProposal(it));
   });
 
-  const homeView = () => map.fitBounds(Object.values(airports).map(a => [a.lat, a.lng]), { padding: [40, 40] });
+  // Standardvyn visar alla flygplatser, annars alla platser i planen
+  function homeView() {
+    const pts = Object.values(airports).filter(hasCoords).map(a => [a.lat, a.lng]);
+    const all = pts.length ? pts : pointsOf(() => true);
+    if (all.length) map.fitBounds(all, { padding: [40, 40] });
+    else map.setView([20, 120], 3);
+  }
   homeView();
   document.getElementById('mapZoomIn').addEventListener('click', () => map.zoomIn());
   document.getElementById('mapZoomOut').addEventListener('click', () => map.zoomOut());
@@ -134,7 +140,13 @@
     const half = pts.reduce((m, [la, ln]) => Math.max(m, Math.abs(la - cLat), Math.abs(ln - cLng)), 0.02);
     map.fitBounds([[cLat - half, cLng - half], [cLat + half, cLng + half]], { padding: [20, 20], maxZoom: 15, animate: false });
   }
-  document.querySelectorAll('[data-city-zoom]').forEach(btn => btn.addEventListener('click', () => zoomToCity(btn.dataset.cityZoom)));
+  // Knapparna byggs från CITY_CENTERS, så en ny stad läggs bara till där
+  const cityZoom = document.getElementById('city-zoom');
+  cityZoom.innerHTML = CITIES.map(c => `<button type="button" data-city-zoom="${esc(c)}">${esc(c)}</button>`).join('');
+  cityZoom.addEventListener('click', e => {
+    const btn = e.target.closest('button');
+    if (btn) zoomToCity(btn.dataset.cityZoom);
+  });
 
   // Flyglinjer: bara den valda flygningen visas (inte när ett förslag är valt)
   function styleFlightLines() {
@@ -202,21 +214,17 @@
       <div><b>${esc(it.till.kod)}</b><span>${esc(timeOf(it.sluttid))}</span></div>
     </div>`;
 
-  // För transport visas bara avgångsplatsen, destinationen finns redan i flyglinjen
-  const placeOf = it => (isFlight(it) ? (it.adress || '').split('→')[0] : it.adress || '').trim();
-
   function showDetail(it) {
     selectedId = it.id;
     clearProposalPin();
     // Flygnumret visas redan i flyglinjen, så titeln blir bara rutten
     const title = isFlight(it) ? it.namn.replace(/^\S+\s+/, '') : it.namn;
-    // Transport visar tid och varaktighet på varsin rad
-    const transport = it.typ === 'transport';
+    // För transport är adressen avgångsplatsen
     renderDetail(esc(title), rowsOf([
       ['Status', STATUS_LABELS[it.status] || it.status], ['Date', it.dag],
-      ['Time', transport ? rangeOf(it) : timeLabel(it)],
-      ['Duration', transport && it.sluttid ? duration(it) : ''],
-      ['Place', placeOf(it)], ['Price', it.pris], ['Notes', it.anteckn]
+      ['Time', rangeOf(it)],
+      ['Duration', it.typ === 'transport' && it.sluttid ? duration(it) : ''],
+      ['Place', it.adress], ['Price', it.pris], ['Notes', it.anteckn]
     ]), colorOf(it), isFlight(it) ? legOf(it) : '');
     renderTimeline();
     updateVisibility();
@@ -419,7 +427,6 @@
       const cards = list.map(it => `<div class="pcard" data-pid="${esc(it.id)}">
           <div class="pname"><span><span class="swatch" style="background:${colorOf(it)}"></span>${esc(it.namn)}${ratingHtml(it)}</span></div>
           ${it.summary ? `<div class="psummary">${esc(it.summary)}</div>` : ''}
-          ${linkOf(it) ? `<a href="${esc(linkOf(it))}" target="_blank" rel="noopener">Source ↗</a>` : ''}
         </div>`).join('');
       return `<div class="pgroup">${cards}</div>`;
     }).join('');
@@ -465,8 +472,9 @@
     highlightProposal(it.id);
     focusPlace(it.plats);
     const rows = rowsOf([
-      ['Status', STATUS_LABELS[it.status] || it.status], ['Price', it.pris], ['Opening hours', it.oppettider], ['Notes', it.anteckn],
-    ]) + (linkOf(it) ? `<dt>Source</dt><dd><a href="${esc(linkOf(it))}" target="_blank" rel="noopener">Google Maps ↗</a></dd>` : '');
+      ['Status', STATUS_LABELS[it.status] || it.status], ['Price', it.pris], ['Opening hours', it.oppettider],
+      ['Description', it.description], ['Review', it.review], ['Notes', it.anteckn]
+    ]) + sourceRow(it);
     renderDetail(esc(it.namn) + ratingHtml(it), rows, colorOf(it));
     document.querySelectorAll('.pcard').forEach(c => c.classList.toggle('active', c.dataset.pid === it.id));
   }

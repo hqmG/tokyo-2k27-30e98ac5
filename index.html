@@ -74,7 +74,6 @@
   .stars { position: relative; display: inline-block; font-size: 13px; letter-spacing: 1px; color: var(--line); }
   .stars .fill { position: absolute; left: 0; top: 0; overflow: hidden; white-space: nowrap; color: #f5b301; }
   .pcard.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  .pcard a { font-size: 13px; }
   .psummary { color: var(--muted); font-size: 13px; margin-top: 2px; }
   #proposals .rating { color: var(--fg); }
   .empty { color: var(--muted); }
@@ -167,12 +166,7 @@
     <button id="mapZoomOut" type="button" aria-label="Zoom out map">−</button>
     <button id="mapZoomFit" type="button" aria-label="Reset map view" title="Reset map view">○</button>
     <button id="mapZoomIn" type="button" aria-label="Zoom in map">+</button>
-    <span class="cities">
-      <button type="button" data-city-zoom="Tokyo">Tokyo</button>
-      <button type="button" data-city-zoom="Osaka">Osaka</button>
-      <button type="button" data-city-zoom="Kyoto">Kyoto</button>
-      <button type="button" data-city-zoom="Saigon">Saigon</button>
-    </span>
+    <span class="cities" id="city-zoom"></span>
   </div>
 
   <h2>Proposals</h2>

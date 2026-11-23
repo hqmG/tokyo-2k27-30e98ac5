@@ -1,16 +1,18 @@
 // Läser planen från Google Sheets (fliken "Plan"). Enda datakällan: om bladet inte går att läsa visas ett felmeddelande.
+// Kolumnerna matchas på rubrikraden i bladet, så kolumner kan flyttas eller läggas till utan att koden ändras.
 (() => {
   const SHEET_ID = '1GuYIA1zDnEMxz6cnNgzt8dHVtd0-GzT48RjtsS8q46o';
   const SHEET_NAME = 'Plan';
   const TIMEOUT_MS = 30000;
   const CALLBACK = '__onPlanData';
-  // Kolumnerna i bladet, i samma ordning som i kalkylbladet
-  const COLUMNS = ['id', 'type', 'name', 'status', 'date', 'end_date', 'start_time', 'end_time', 'utc_offset', 'end_utc_offset',
-    'from_code', 'from_lat', 'from_lng', 'to_code', 'to_lat', 'to_lng', 'lat', 'lng', 'city', 'address', 'price',
-    'rating', 'rating_count', 'url', 'opening_hours', 'summary', 'notes'];
 
   const pad = n => String(n).padStart(2, '0');
-  const num = s => (s === '' ? undefined : Number(s));
+  // Tal kan komma som text med decimalkomma (svensk locale), t.ex. "55,612013"
+  const num = s => {
+    if (s === '') return undefined;
+    const n = Number(s.replace(',', '.'));
+    return Number.isFinite(n) ? n : undefined;
+  };
 
   // Google returnerar datum och klockslag som "Date(...)". Här görs de om till text.
   function cellText(cell) {
@@ -23,21 +25,33 @@
     return String(v);
   }
 
+  // Rubrikerna kommer antingen som kolumnetiketter eller som en rad som börjar med "id"
+  function headerOf(table) {
+    const labels = table.cols.map(c => String(c.label ?? '').trim());
+    if (labels.includes('id')) return labels;
+    const row = table.rows.find(r => r.c?.[0]?.v === 'id');
+    if (!row) throw new Error('rubrikraden saknas');
+    return row.c.map(cell => String(cell?.v ?? '').trim());
+  }
+
   // Gör om en rad till det format som index.js använder
-  function toItem(row) {
-    const f = Object.fromEntries(COLUMNS.map((c, i) => [c, cellText(row.c[i])]));
+  function toItem(row, header) {
+    const f = Object.fromEntries(header.map((name, i) => [name, cellText(row.c[i])]));
+    const lat = num(f.latitude), lng = num(f.longitude);
     const item = {
       id: f.id, typ: f.type, namn: f.name, status: f.status, dag: f.date,
-      starttid: f.start_time, sluttid: f.end_time,
+      starttid: f.time, sluttid: f.end_time,
       utc: num(f.utc_offset) ?? 0, slututc: num(f.end_utc_offset) ?? 0,
-      adress: f.address, pris: f.price, anteckn: f.notes, stad: f.city,
-      url: f.url, oppettider: f.opening_hours, summary: f.summary,
-      rating: num(f.rating), ratingCount: num(f.rating_count)
+      stad: f.city, summary: f.summary, adress: f.address,
+      rating: num(f.rating), ratingCount: num(f.rating_count), pris: f.price,
+      oppettider: f.opening_hours, description: f.description, review: f.review, anteckn: f.notes, url: f.url
     };
     if (f.end_date) item.slutdag = f.end_date;
-    if (f.from_code) item.fran = { kod: f.from_code, lat: num(f.from_lat), lng: num(f.from_lng) };
-    if (f.to_code) item.till = { kod: f.to_code, lat: num(f.to_lat), lng: num(f.to_lng) };
-    if (f.lat) item.plats = { lat: num(f.lat), lng: num(f.lng) };
+    // Transport: latitude/longitude är avreseplatsen, to_latitude/to_longitude ankomstplatsen.
+    // Övriga objekt har en enda plats.
+    if (f.from_code) item.fran = { kod: f.from_code, lat, lng };
+    else if (lat != null && lng != null) item.plats = { lat, lng };
+    if (f.to_code) item.till = { kod: f.to_code, lat: num(f.to_latitude), lng: num(f.to_longitude) };
     return item;
   }
 
@@ -73,16 +87,16 @@
 
   window[CALLBACK] = response => {
     if (loaded) return;
+    clearTimeout(timer);
     try {
+      const header = headerOf(response.table);
       const rows = response.table.rows.filter(r => r.c?.[0]?.v && r.c[0].v !== 'id');
-      window.PLAN_MODULES = [{ type: 'sheet', items: rows.map(toItem) }];
+      window.PLAN_ITEMS = rows.map(r => toItem(r, header));
     } catch (e) {
-      clearTimeout(timer);
       fail(`kunde inte tolka svaret: ${e.message}`);
       return;
     }
     loaded = true;
-    clearTimeout(timer);
     loader.remove();
     errorEl?.remove();
     loadScript('index.js');
