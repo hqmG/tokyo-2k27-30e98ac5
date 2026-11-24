@@ -35,7 +35,9 @@
     const min = Math.round((arrivalMs(it) - absMs(it)) / 60000);
     return `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`;
   };
-  const rangeOf = it => (it.starttid || '') + (it.sluttid ? ' → ' + it.sluttid : '');
+  // Ankomstdagen visas när den skiljer sig från avgångsdagen, t.ex. "14:00 → 10:25 (9 June)"
+  const arrivalDay = it => it.slutdag && it.slutdag !== it.dag ? ` (${dayLabel(it.slutdag)})` : '';
+  const rangeOf = it => (it.starttid || '') + (it.sluttid ? ` → ${it.sluttid}${arrivalDay(it)}` : '');
   const sourceRow = it => linkOf(it) ? `<dt>Source</dt><dd><a href="${esc(linkOf(it))}" target="_blank" rel="noopener">Google Maps ↗</a></dd>` : '';
   const rowsOf = pairs => pairs.filter(([, v]) => v).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(capitalize(v))}</dd>`).join('');
 
@@ -76,7 +78,7 @@
   flights.forEach(it => {
     const path = [[it.fran.lat, it.fran.lng], [it.till.lat, it.till.lng]];
     flightLines[it.id] = L.polyline(path, { color: colorOf(it), weight: 3, opacity: 0, interactive: false }).addTo(map);
-    L.polyline(path, { weight: 16, opacity: 0 }).addTo(map).on('click', () => toggleSelect(it));
+    L.polyline(path, { weight: 16, opacity: 0 }).addTo(map).on('click', () => selectItem(it));
   });
 
   // Flygplatsmarkörer ligger ovanpå linjerna, så att klick på flygplatsen träffar den
@@ -93,18 +95,18 @@
         const from = items.filter(it => it.fran?.kod === a.kod);
         const pick = from.length ? from : items.filter(it => touches(it, a.kod));
         const next = pick.reduce((best, it) => !best || Math.abs(absMs(it) - now) < Math.abs(absMs(best) - now) ? it : best, null);
-        if (next) toggleSelect(next);
+        if (next) selectItem(next);
       });
   });
 
-  // Händelser utan flyg (t.ex. restaurang) är en markör på sin plats
+  // Händelser utan flyg (t.ex. food) är en markör på sin plats
   const pinMarkers = {};
   items.filter(it => !isFlight(it) && hasCoords(it.plats)).forEach(it => {
     const c = colorOf(it);
     pinMarkers[it.id] = L.circleMarker([it.plats.lat, it.plats.lng], { radius: 8, color: c, fillColor: c, fillOpacity: 0.01, weight: 2 })
       .bindTooltip(esc(it.namn), { direction: 'top' })
       .addTo(map)
-      .on('click', () => toggleSelect(it));
+      .on('click', () => selectItem(it));
   });
 
   // Förslag visas på kartan när de passar filtret: transparenta i kategorins färg, fyllda när de är valda
@@ -116,7 +118,7 @@
       radius: 8, color: c, weight: 2, opacity: 0.75, fillColor: c, fillOpacity: 0
     }).bindTooltip(esc(it.namn), { direction: 'top' })
       .addTo(map)
-      .on('click', () => showProposal(it));
+      .on('click', () => toggleProposal(it));
   });
 
   // Standardvyn visar alla flygplatser, annars alla platser i planen
@@ -148,20 +150,19 @@
     if (btn) zoomToCity(btn.dataset.cityZoom);
   });
 
-  // Flyglinjer: bara den valda flygningen visas (inte när ett förslag är valt)
+  // Flyglinjer: bara den valda flygningen visas, även när ett förslag är valt
   function styleFlightLines() {
     flights.forEach(f => {
-      const sel = f.id === selectedId && !selectedProposalId;
+      const sel = f.id === selectedId;
       flightLines[f.id].setStyle({ opacity: sel ? 1 : 0, weight: sel ? 4 : 3 });
     });
   }
 
-  // Flygplatsernas etiketter visas bara för den valda resan (ifyllnaden sköts av updateVisibility)
+  // Flygplatsernas etiketter visas bara för den valda resan (ifyllnad och linjer sköts av updateVisibility)
   function drawRoute(it) {
     Object.entries(airportMarkers).forEach(([kod, m]) => {
       if (touches(it, kod)) m.openTooltip(); else m.closeTooltip();
     });
-    styleFlightLines();
   }
 
   // Ruttbilden byggs av flygningarna i planen. Flygplanet står vid senast landade flygplats eller mitt i aktuell flygning.
@@ -202,11 +203,6 @@
   }
 
   // ---------- Detaljruta ----------
-  function renderDetail(title, rowsHtml, color, leg = '') {
-    const swatch = color ? `<span class="swatch" style="background:${color}"></span>` : '';
-    detail.innerHTML = `<h3>${swatch}${title}</h3>${leg}<dl>${rowsHtml}</dl>`;
-  }
-
   // Flyget som i tidslinjen: avgång, linje med flightnummer och ankomst
   const legOf = it => `<div class="dleg">
       <div><b>${esc(it.fran.kod)}</b><span>${esc(it.starttid || '')}</span></div>
@@ -214,38 +210,36 @@
       <div><b>${esc(it.till.kod)}</b><span>${esc(timeOf(it.sluttid))}</span></div>
     </div>`;
 
+  // Visar en bokad händelse i detaljrutan och markerar den i tidslinjen och på kartan
   function showDetail(it) {
     selectedId = it.id;
-    clearProposalPin();
     // Flygnumret visas redan i flyglinjen, så titeln blir bara rutten
     const title = isFlight(it) ? it.namn.replace(/^\S+\s+/, '') : it.namn;
-    // För transport är adressen avgångsplatsen
-    renderDetail(esc(title), rowsOf([
+    // Transport visar terminalerna (summary), övriga händelser adressen
+    const transport = it.typ === 'transport';
+    const rows = rowsOf([
       ['Status', STATUS_LABELS[it.status] || it.status], ['Date', it.dag],
       ['Time', rangeOf(it)],
-      ['Duration', it.typ === 'transport' && it.sluttid ? duration(it) : ''],
-      ['Place', it.adress], ['Price', it.pris], ['Notes', it.anteckn]
-    ]), colorOf(it), isFlight(it) ? legOf(it) : '');
+      ['Duration', transport && it.sluttid ? duration(it) : ''],
+      transport ? ['Terminal', it.summary] : ['Place', it.adress], ['Price', it.pris], ['Notes', it.anteckn]
+    ]);
+    detail.innerHTML = `<h3><span class="swatch" style="background:${colorOf(it)}"></span>${esc(title)}</h3>` +
+      `${isFlight(it) ? legOf(it) : ''}<dl>${rows}</dl>`;
     renderTimeline();
     updateVisibility();
   }
 
-  // Väljer en händelse (från tidslinjen eller kartan). Klick på redan vald händelse återställer kartan till den.
-  function toggleSelect(it) {
+  // Väljer en händelse (från tidslinjen, kartan eller detaljrutan) och zoomar kartan till den
+  function selectItem(it) {
     showDetail(it);
     focusOn(it);
   }
 
-  // Klick i detaljrutan zoomar kartan till standardvyn för den valda noden (länkar fungerar som vanligt)
+  // Klick i detaljrutan zoomar kartan tillbaka till den valda händelsen (länkar fungerar som vanligt)
   detail.addEventListener('click', e => {
     if (e.target.closest('a')) return;
-    if (selectedProposalId) {
-      const p = proposals.find(x => x.id === selectedProposalId);
-      if (p) focusPlace(p.plats);
-      return;
-    }
     const it = itemById[selectedId];
-    if (it) focusOn(it);
+    if (it) selectItem(it);
   });
 
   // ---------- Tidslinje ----------
@@ -317,7 +311,7 @@
   canvas.addEventListener('click', e => {
     const node = e.target.closest('.node');
     const it = node && itemById[node.dataset.id];
-    if (it) toggleSelect(it);
+    if (it) selectItem(it);
   });
 
   // ---------- Zoom ----------
@@ -378,20 +372,19 @@
   }
 
   // Kartan styrs av två håll: filtren visar förslag (och bokade noder efter första filterklicket),
-  // och den valda händelsen visas alltid ifylld, utom när ett förslag är valt.
+  // och den valda händelsen visas alltid ifylld, även när ett förslag är valt.
   // Staden som valts med knappen under kartan visar alla dess noder, oberoende av proposals-filtret
   const inMapCity = it => Boolean(mapCity) && inCity(it, mapCity);
   const toggleOnMap = (m, on) => { if (on) m.addTo(map); else m.remove(); };
   function updateVisibility() {
-    const isSel = it => it.id === selectedId && !selectedProposalId;
     mappedProposals.forEach(it => toggleOnMap(proposalMarkers[it.id], matchesFilter(it) || inMapCity(it)));
     Object.entries(pinMarkers).forEach(([id, m]) => {
-      const sel = isSel(itemById[id]);
+      const sel = id === selectedId;
       toggleOnMap(m, bookedShown || sel || inMapCity(itemById[id]));
       m.setStyle({ fillOpacity: sel ? 1 : 0.01 });
     });
     Object.entries(airportMarkers).forEach(([kod, m]) => {
-      const sel = flights.some(f => touches(f, kod) && isSel(f));
+      const sel = flights.some(f => touches(f, kod) && f.id === selectedId);
       toggleOnMap(m, sel || flights.some(f => touches(f, kod) && (bookedShown || inMapCity(f))));
       m.setStyle({ fillOpacity: sel ? 1 : 0.01 });
     });
@@ -424,10 +417,17 @@
     el.innerHTML = Object.keys(window.CONFIG.types).map(key => {
       const list = shown.filter(it => groupOf(it) === key);
       if (!list.length) return '';
-      const cards = list.map(it => `<div class="pcard" data-pid="${esc(it.id)}">
-          <div class="pname"><span><span class="swatch" style="background:${colorOf(it)}"></span>${esc(it.namn)}${ratingHtml(it)}</span></div>
-          ${it.summary ? `<div class="psummary">${esc(it.summary)}</div>` : ''}
-        </div>`).join('');
+      // Korten är minimerade; rubriken är en knapp som visar detaljerna (klassen active på kortet)
+      const cards = list.map(it => {
+        const open = it.id === selectedProposalId;
+        return `<div class="pcard${open ? ' active' : ''}" data-pid="${esc(it.id)}">
+          <button type="button" class="phead" aria-expanded="${open}">
+            <span class="pname"><span class="swatch" style="background:${colorOf(it)}"></span>${esc(it.namn)}${ratingHtml(it)}</span>
+            ${it.summary ? `<span class="psummary">${esc(it.summary)}</span>` : ''}
+          </button>
+          <dl class="pdetail">${proposalRows(it)}</dl>
+        </div>`;
+      }).join('');
       return `<div class="pgroup">${cards}</div>`;
     }).join('');
   }
@@ -447,36 +447,29 @@
     applyMarkerFilter();
   }
 
-  function highlightProposal(id) {
-    Object.entries(proposalMarkers).forEach(([pid, m]) => {
-      m.setStyle({ opacity: 0.75, fillOpacity: pid === id ? 0.75 : 0 });
+
+  const proposalRows = it => rowsOf([
+    ['Status', STATUS_LABELS[it.status] || it.status], ['Price', it.pris], ['Opening hours', it.oppettider],
+    ['Description', it.description], ['Review', it.review], ['Notes', it.anteckn]
+  ]) + sourceRow(it);
+
+  // Det valda förslaget är expanderat i listan och ifyllt på kartan, övriga är minimerade
+  function markProposal() {
+    document.querySelectorAll('.pcard').forEach(c => {
+      const open = c.dataset.pid === selectedProposalId;
+      c.classList.toggle('active', open);
+      c.querySelector('.phead').setAttribute('aria-expanded', String(open));
     });
+    Object.entries(proposalMarkers).forEach(([pid, m]) => m.setStyle({ fillOpacity: pid === selectedProposalId ? 0.75 : 0 }));
   }
 
-  function clearProposalPin() {
-    selectedProposalId = null;
-    highlightProposal(null);
-    document.querySelectorAll('.pcard.active').forEach(c => c.classList.remove('active'));
-  }
-
-  // Ett förslag ersätter detaljrutan. Klick på samma förslag visar den valda händelsen igen.
-  function showProposal(it) {
-    if (selectedProposalId === it.id) {
-      const current = itemById[selectedId];
-      if (current) showDetail(current);
-      return;
-    }
-    clearProposalPin();
-    selectedProposalId = it.id;
-    updateVisibility();
-    highlightProposal(it.id);
+  // Väljer ett förslag, eller minimerar det om det redan är valt
+  function toggleProposal(it) {
+    selectedProposalId = selectedProposalId === it.id ? null : it.id;
+    markProposal();
+    if (!selectedProposalId) return;
     focusPlace(it.plats);
-    const rows = rowsOf([
-      ['Status', STATUS_LABELS[it.status] || it.status], ['Price', it.pris], ['Opening hours', it.oppettider],
-      ['Description', it.description], ['Review', it.review], ['Notes', it.anteckn]
-    ]) + sourceRow(it);
-    renderDetail(esc(it.namn) + ratingHtml(it), rows, colorOf(it));
-    document.querySelectorAll('.pcard').forEach(c => c.classList.toggle('active', c.dataset.pid === it.id));
+    document.querySelector(`.pcard[data-pid="${CSS.escape(it.id)}"]`)?.scrollIntoView({ block: 'nearest' });
   }
 
   document.getElementById('tabs').addEventListener('click', e => {
@@ -487,10 +480,11 @@
     const btn = e.target.closest('button');
     if (btn) setFilter(undefined, btn.dataset.city);
   });
+  // Kortets rubrik växlar kortet (knappen hanterar även Enter och mellanslag)
   document.getElementById('proposals').addEventListener('click', e => {
-    const card = e.target.closest('.pcard');
+    const card = e.target.closest('.phead')?.closest('.pcard');
     const it = card && proposals.find(p => p.id === card.dataset.pid);
-    if (it) showProposal(it);
+    if (it) toggleProposal(it);
   });
 
   // ---------- Nedräkning till första flyget ----------
@@ -575,10 +569,9 @@
     .map(t => `<span><i style="background:${t.color}"></i>${esc(t.label)}</span>`).join('');
   renderTabs();
   renderProposals();
-  renderTimeline();
   // Vid start väljs nästa händelse (eller den sista, om alla har passerat)
   const upcoming = nextItem();
-  if (upcoming) { showDetail(upcoming); drawRoute(upcoming); }
+  if (upcoming) { showDetail(upcoming); drawRoute(upcoming); } else renderTimeline();
   focusNext();
   renderCountdown();
   setInterval(renderCountdown, 1000);

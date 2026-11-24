@@ -68,13 +68,15 @@
   .zoombar .cities { margin-left: auto; display: flex; gap: 6px; }
 
   .pgroup { margin-bottom: 14px; }
-  .pcard { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
-  .pname { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; }
+  .pcard { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+  .phead { display: block; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .phead:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+  .pname { display: flex; align-items: center; font-weight: 600; }
   .rating { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; font-size: 13px; font-weight: normal; color: var(--muted); }
   .stars { position: relative; display: inline-block; font-size: 13px; letter-spacing: 1px; color: var(--line); }
   .stars .fill { position: absolute; left: 0; top: 0; overflow: hidden; white-space: nowrap; color: #f5b301; }
   .pcard.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  .psummary { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .psummary { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
   #proposals .rating { color: var(--fg); }
   .empty { color: var(--muted); }
   .countdown { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; padding: 16px; margin-bottom: 4px; border-radius: 14px; border: 1px solid var(--border); background: linear-gradient(135deg, var(--panel), var(--band)); }
@@ -106,9 +108,10 @@
   .tabs button.active[data-type="all"], .tabs button.active[data-city="all"] { background: var(--accent); color: #fff; box-shadow: none; }
   #detail { margin: 0 0 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
   #detail h3 { margin: 0 0 6px; font-size: 17px; }
-  #detail dl { display: grid; grid-template-columns: 120px 1fr; gap: 4px 12px; margin: 8px 0 0; font-size: 14px; }
-  #detail dt { color: var(--muted); }
-  #detail dd { margin: 0; }
+  #detail dl, .pdetail { display: grid; grid-template-columns: 120px 1fr; gap: 4px 12px; margin: 8px 0 0; font-size: 14px; }
+  #detail dt, .pdetail dt { color: var(--muted); }
+  #detail dd, .pdetail dd { margin: 0; }
+  .pcard:not(.active) .pdetail { display: none; }
   .plan-loader { display: flex; justify-content: center; padding: 8px 0 16px; color: var(--muted); }
   .plan-loader span { width: 8px; height: 8px; margin: 0 4px; border-radius: 50%; background: currentColor; animation: plan-dot 1.2s infinite ease-in-out; }
   .plan-loader span:nth-child(2) { animation-delay: .2s; }
