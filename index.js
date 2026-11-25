@@ -1,5 +1,8 @@
 (() => {
+  'use strict';
+
   // ---------- Konstanter ----------
+  const TYPES = window.CONFIG.types;   // typer, färger och etiketter från config.js
   const HOUR_MS = 3600000, DAY_MS = 86400000;
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const STATUS_LABELS = { proposal: 'Proposal', booked: 'Booked', approved: 'Approved' };
@@ -12,16 +15,18 @@
   const FIREWORK_COLORS = ['#f43f5e', '#fbbf24', '#34d399', '#60a5fa', '#a78bfa', '#fb923c', '#f0abfc'];
 
   // ---------- Hjälpfunktioner ----------
-  const colorOf = it => window.CONFIG.types[it.typ]?.color || '#64748b';
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const capitalize = s => String(s).charAt(0).toUpperCase() + String(s).slice(1);
   const dayLabel = dag => { const [, m, d] = dag.split('-').map(Number); return `${d} ${MONTHS[m - 1]}`; };
   const hasCoords = p => p?.lat != null && p?.lng != null;
   const touches = (it, kod) => it.fran?.kod === kod || it.till?.kod === kod;
   const isFlight = it => Boolean(it.fran && it.till);
-  const groupOf = it => window.CONFIG.types[it.typ] ? it.typ : 'other';
-  // Länkar från bladet öppnas bara om de är https-adresser (skydd mot javascript:-länkar)
-  const linkOf = it => /^https:\/\//i.test(it.url || '') ? it.url : null;
+  const groupOf = it => TYPES[it.typ] ? it.typ : 'other';   // okända typer visas som Other
+  const colorOf = it => TYPES[groupOf(it)].color;
+  // Länkar från bladet visas bara om de är giltiga https-adresser (skydd mot javascript:-länkar och trasiga adresser)
+  const isSafeUrl = u => {
+    try { return new URL(u).protocol === 'https:'; } catch { return false; }
+  };
   // En händelse hör till en stad via sitt stadsfält, ett flyg via någon av sina flygplatser
   const inCity = (it, city) => it.stad === city || (isFlight(it) && (CITY_AIRPORTS[city] || []).some(k => touches(it, k)));
 
@@ -38,7 +43,19 @@
   // Ankomstdagen visas när den skiljer sig från avgångsdagen, t.ex. "14:00 → 10:25 (9 June)"
   const arrivalDay = it => it.slutdag && it.slutdag !== it.dag ? ` (${dayLabel(it.slutdag)})` : '';
   const rangeOf = it => (it.starttid || '') + (it.sluttid ? ` → ${it.sluttid}${arrivalDay(it)}` : '');
-  const sourceRow = it => linkOf(it) ? `<dt>Source</dt><dd><a href="${esc(linkOf(it))}" target="_blank" rel="noopener">Google Maps ↗</a></dd>` : '';
+  // Länkens etikett följer webbplatsen, t.ex. "Google Maps", "Tabelog" eller "booking.com"
+  const sourceLabel = url => {
+    const host = new URL(url).hostname;
+    if (/(^|\.)google\.[a-z.]+$/.test(host)) return 'Google Maps';
+    if (/(^|\.)tabelog\.com$/.test(host)) return 'Tabelog';
+    return host.split('.').slice(-2).join('.');
+  };
+  // Google Maps, Tabelog och bokningssidan (url, tabelog_url, booking_url) visas som länkar på samma rad
+  const sourceRow = it => {
+    const links = [...new Set([it.url, it.tabelogUrl, it.bookingUrl])].filter(isSafeUrl)
+      .map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(sourceLabel(u))} ↗</a>`);
+    return links.length ? `<dt>Source</dt><dd>${links.join(' · ')}</dd>` : '';
+  };
   const rowsOf = pairs => pairs.filter(([, v]) => v).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(capitalize(v))}</dd>`).join('');
 
   // ---------- Data ----------
@@ -53,7 +70,6 @@
     if (it.till) airports[it.till.kod] = it.till;
   });
   const itemById = Object.fromEntries(items.map(it => [it.id, it]));
-  const hitOf = kod => items.find(it => touches(it, kod));
 
   // ---------- Tillstånd och element ----------
   const detail = document.getElementById('detail');
@@ -84,10 +100,9 @@
   // Flygplatsmarkörer ligger ovanpå linjerna, så att klick på flygplatsen träffar den
   const airportMarkers = {};
   Object.values(airports).forEach(a => {
-    const hit = hitOf(a.kod);
-    const c = hit ? colorOf(hit) : '#64748b';
+    const c = colorOf(items.find(it => touches(it, a.kod)));
     airportMarkers[a.kod] = L.circleMarker([a.lat, a.lng], { radius: 8, color: c, fillColor: c, fillOpacity: 0.01, weight: 3 })
-      .bindTooltip(a.kod, { permanent: true, direction: 'right', offset: [8, 0] })
+      .bindTooltip(esc(a.kod), { permanent: true, direction: 'right', offset: [8, 0] })
       .addTo(map)
       .on('click', () => {
         // Väljer resan som startar på flygplatsen, annars den som ligger närmast i tid från nu
@@ -159,7 +174,7 @@
   }
 
   // Flygplatsernas etiketter visas bara för den valda resan (ifyllnad och linjer sköts av updateVisibility)
-  function drawRoute(it) {
+  function showAirportLabels(it) {
     Object.entries(airportMarkers).forEach(([kod, m]) => {
       if (touches(it, kod)) m.openTooltip(); else m.closeTooltip();
     });
@@ -194,7 +209,7 @@
 
   // Zoomar kartan till en händelse: flyg visas som rutt, övriga som en plats
   function focusOn(it) {
-    drawRoute(it);
+    showAirportLabels(it);
     if (isFlight(it)) {
       map.fitBounds([[it.fran.lat, it.fran.lng], [it.till.lat, it.till.lng]], { padding: [60, 60], maxZoom: 6, animate: false });
     } else {
@@ -222,7 +237,7 @@
       ['Time', rangeOf(it)],
       ['Duration', transport && it.sluttid ? duration(it) : ''],
       transport ? ['Terminal', it.summary] : ['Place', it.adress], ['Price', it.pris], ['Notes', it.anteckn]
-    ]);
+    ]) + sourceRow(it);
     detail.innerHTML = `<h3><span class="swatch" style="background:${colorOf(it)}"></span>${esc(title)}</h3>` +
       `${isFlight(it) ? legOf(it) : ''}<dl>${rows}</dl>`;
     renderTimeline();
@@ -365,8 +380,8 @@
     return `<button type="button" data-${attr}="${esc(k)}" class="${active ? 'active' : ''}">${esc(label(k))}</button>`;
   }).join('');
   function renderTabs() {
-    document.getElementById('tabs').innerHTML = tabsHtml('type', proposalFilter, Object.keys(window.CONFIG.types),
-      k => k === 'all' ? 'All categories' : window.CONFIG.types[k].label);
+    document.getElementById('tabs').innerHTML = tabsHtml('type', proposalFilter, Object.keys(TYPES),
+      k => k === 'all' ? 'All categories' : TYPES[k].label);
     document.getElementById('city-tabs').innerHTML = tabsHtml('city', cityFilter, CITIES,
       c => c === 'all' ? 'All cities' : c);
   }
@@ -409,12 +424,18 @@
     if (points.length) map.fitBounds(points, { padding: [40, 40], maxZoom: 14, animate: false });
   }
 
+  // Detaljerna i ett expanderat förslagskort
+  const proposalRows = it => rowsOf([
+    ['Status', STATUS_LABELS[it.status] || it.status], ['Price', it.pris], ['Opening hours', it.oppettider],
+    ['Description', it.description], ['Review', it.review], ['Notes', it.anteckn]
+  ]) + sourceRow(it);
+
   function renderProposals() {
     const el = document.getElementById('proposals');
     // Sorteras efter betyg, högst först. Förslag utan betyg hamnar sist.
     const shown = proposals.filter(matchesFilter).sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1));
-    if (!shown.length) { el.innerHTML = '<div class="empty">No proposals in this category.</div>'; return; }
-    el.innerHTML = Object.keys(window.CONFIG.types).map(key => {
+    if (!shown.length) { el.innerHTML = '<div class="empty">No proposals match the filter.</div>'; return; }
+    el.innerHTML = Object.keys(TYPES).map(key => {
       const list = shown.filter(it => groupOf(it) === key);
       if (!list.length) return '';
       // Korten är minimerade; rubriken är en knapp som visar detaljerna (klassen active på kortet)
@@ -438,20 +459,14 @@
     else if (set.has(key)) set.delete(key);
     else set.add(key);
   };
-  function setFilter(kind, city) {
-    if (kind !== undefined) toggleIn(proposalFilter, kind);
-    if (city !== undefined) toggleIn(cityFilter, city);
+  function setFilter(set, key) {
+    toggleIn(set, key);
     bookedShown = true;
     renderTabs();
     renderProposals();
     applyMarkerFilter();
   }
 
-
-  const proposalRows = it => rowsOf([
-    ['Status', STATUS_LABELS[it.status] || it.status], ['Price', it.pris], ['Opening hours', it.oppettider],
-    ['Description', it.description], ['Review', it.review], ['Notes', it.anteckn]
-  ]) + sourceRow(it);
 
   // Det valda förslaget är expanderat i listan och ifyllt på kartan, övriga är minimerade
   function markProposal() {
@@ -474,11 +489,11 @@
 
   document.getElementById('tabs').addEventListener('click', e => {
     const btn = e.target.closest('button');
-    if (btn) setFilter(btn.dataset.type, undefined);
+    if (btn) setFilter(proposalFilter, btn.dataset.type);
   });
   document.getElementById('city-tabs').addEventListener('click', e => {
     const btn = e.target.closest('button');
-    if (btn) setFilter(undefined, btn.dataset.city);
+    if (btn) setFilter(cityFilter, btn.dataset.city);
   });
   // Kortets rubrik växlar kortet (knappen hanterar även Enter och mellanslag)
   document.getElementById('proposals').addEventListener('click', e => {
@@ -495,6 +510,7 @@
 
   // Fyrverkerier: sex skurar med gnistor som tas bort efter en stund
   function fireworks() {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const layer = document.createElement('div');
     layer.className = 'fx';
     for (let b = 0; b < 6; b++) {
@@ -550,7 +566,6 @@
   const sinceUnits = elapsed => [['days', Math.floor(elapsed / DAY_MS)], ...hms(elapsed)];
 
   function renderCountdown() {
-    if (!firstFlight) return;
     const target = absMs(firstFlight);
     const now = Date.now();
     const departed = target - now <= 0;
@@ -565,17 +580,23 @@
   }
 
   // ---------- Start ----------
-  document.getElementById('legend').innerHTML = Object.values(window.CONFIG.types)
+  document.getElementById('legend').innerHTML = Object.values(TYPES)
     .map(t => `<span><i style="background:${t.color}"></i>${esc(t.label)}</span>`).join('');
   renderTabs();
   renderProposals();
   // Vid start väljs nästa händelse (eller den sista, om alla har passerat)
   const upcoming = nextItem();
-  if (upcoming) { showDetail(upcoming); drawRoute(upcoming); } else renderTimeline();
+  if (upcoming) { showDetail(upcoming); showAirportLabels(upcoming); } else renderTimeline();
   focusNext();
-  renderCountdown();
-  setInterval(renderCountdown, 1000);
+  if (firstFlight) {
+    renderCountdown();
+    setInterval(renderCountdown, 1000);
+  }
   updateRoute();
   setInterval(updateRoute, 60000);
-  window.addEventListener('resize', () => { renderTimeline(); updateRoute(); });
+  let resizeFrame = 0;
+  window.addEventListener('resize', () => {
+    cancelAnimationFrame(resizeFrame);
+    resizeFrame = requestAnimationFrame(() => { renderTimeline(); updateRoute(); });
+  });
 })();
