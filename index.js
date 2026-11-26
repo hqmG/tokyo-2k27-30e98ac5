@@ -70,6 +70,7 @@
     if (it.till) airports[it.till.kod] = it.till;
   });
   const itemById = Object.fromEntries(items.map(it => [it.id, it]));
+  const proposalById = Object.fromEntries(proposals.map(it => [it.id, it]));
 
   // ---------- Tillstånd och element ----------
   const detail = document.getElementById('detail');
@@ -85,8 +86,9 @@
 
   // ---------- Karta ----------
   const map = L.map('map', { zoomControl: false });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19, attribution: '&copy; OpenStreetMap-bidragsgivare'
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }).addTo(map);
 
   // Flyglinjer: osynliga tills de väljs. Den breda träffytan ligger ovanpå så att linjen är lätt att klicka på.
@@ -315,7 +317,7 @@
       const offset = BASE + lvl * LEVEL_H;
       const labelPos = side === 'up' ? `bottom:${offset}px` : `top:${offset}px`;
       return `<div class="node ${side} ${active ? 'active' : ''}" data-id="${esc(n.it.id)}" style="left:${x}px">
-          <div class="stem" style="left:0;height:${offset - 12}px"></div>
+          <div class="stem" style="height:${offset - 12}px"></div>
           <span class="dot" style="border-color:${c};${active ? ` background:${c};` : ''}"></span>
           <div class="label" style="${labelPos}"><b>${esc(n.code)}</b><span>${esc(n.time)}</span></div></div>`;
     }).join('');
@@ -467,7 +469,6 @@
     applyMarkerFilter();
   }
 
-
   // Det valda förslaget är expanderat i listan och ifyllt på kartan, övriga är minimerade
   function markProposal() {
     document.querySelectorAll('.pcard').forEach(c => {
@@ -498,7 +499,7 @@
   // Kortets rubrik växlar kortet (knappen hanterar även Enter och mellanslag)
   document.getElementById('proposals').addEventListener('click', e => {
     const card = e.target.closest('.phead')?.closest('.pcard');
-    const it = card && proposals.find(p => p.id === card.dataset.pid);
+    const it = card && proposalById[card.dataset.pid];
     if (it) toggleProposal(it);
   });
 

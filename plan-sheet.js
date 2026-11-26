@@ -1,8 +1,7 @@
 // Läser planen från Google Sheets (fliken "Plan"). Enda datakällan: om bladet inte går att läsa visas ett felmeddelande.
 // Kolumnerna matchas på rubrikraden i bladet, så kolumner kan flyttas eller läggas till utan att koden ändras.
 (() => {
-  const SHEET_ID = '1GuYIA1zDnEMxz6cnNgzt8dHVtd0-GzT48RjtsS8q46o';
-  const SHEET_NAME = 'Plan';
+  const { id: SHEET_ID, name: SHEET_NAME } = window.CONFIG.sheet;   // från config.js
   const TIMEOUT_MS = 30000;
   const CALLBACK = '__onPlanData';
 
@@ -102,6 +101,6 @@
     loadScript('index.js');
   };
 
-  loadScript(`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=responseHandler:${CALLBACK}&sheet=${SHEET_NAME}`,
+  loadScript(`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=responseHandler:${CALLBACK}&sheet=${encodeURIComponent(SHEET_NAME)}`,
     () => { clearTimeout(timer); fail('skriptet kunde inte laddas'); });
 })();

@@ -33,6 +33,7 @@
   .slider { position: absolute; inset: 0; background: var(--line); border-radius: 22px; transition: .2s; }
   .slider::before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
   .switch input:checked + .slider { background: var(--accent); }
+  .switch input:focus-visible + .slider { outline: 2px solid var(--accent); outline-offset: 2px; }
   .switch input:checked + .slider::before { transform: translateX(18px); }
 
   #map { height: 420px; border-radius: 10px; border: 1px solid var(--border); }
@@ -126,8 +127,8 @@
 <main>
   <div class="header">
     <h1>Tokyo 2027</h1>
-    <label class="switch-wrap" aria-label="Dark mode">
-      <span class="switch"><input type="checkbox" id="theme"><span class="slider"></span></span>
+    <label class="switch-wrap">
+      <span class="switch"><input type="checkbox" id="theme" role="switch" aria-label="Dark mode"><span class="slider"></span></span>
     </label>
   </div>
 <script>
