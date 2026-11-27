@@ -117,10 +117,8 @@
         ? `<p class="anote">General info compiled from the sources below, not verified.</p><dl>${rows}</dl><p class="asrc">Sources: ${links}</p>`
         : `<dl>${rows}</dl>`;
     }
-    areaInfo.innerHTML = `<div class="ahead"><div>
-        <h3><span class="swatch" style="background:${region.color}"></span>${esc(name)} · ${esc(region.name)}</h3>
-        <div class="asub">${esc(areas)}</div></div>
-        <button type="button" class="aclose" aria-label="Close area info">×</button></div>${body}`;
+    areaInfo.innerHTML = `<h3><span class="swatch" style="background:${region.color}"></span>${esc(name)} · ${esc(region.name)}</h3>
+        <div class="asub">${esc(areas)}</div>${body}`;
     areaInfo.style.borderColor = region.color;   // kortets kant i områdets färg
     areaInfo.hidden = false;
   }
@@ -157,7 +155,8 @@
     layer.on('mouseout', () => { if (selectedWard?.layer !== layer) setFill(layer, false); });
     layer.on('click', () => toggleWard(entry));
   }));
-  areaInfo.addEventListener('click', e => { if (e.target.closest('.aclose')) clearWard(); });
+  // Klick på rutan stänger den, precis som ett nytt klick på stadsdelen (länkar fungerar som vanligt)
+  areaInfo.addEventListener('click', e => { if (!e.target.closest('a')) clearWard(); });
   document.addEventListener('areas-loaded', renderArea);   // fliken Areas laddas separat och kan komma efter ett klick
 
   // Flyglinjer: osynliga tills de väljs. Den breda träffytan ligger ovanpå så att linjen är lätt att klicka på.

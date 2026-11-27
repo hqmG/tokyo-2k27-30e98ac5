@@ -125,14 +125,12 @@
   @keyframes plan-dot { 0%, 80%, 100% { opacity: .2; } 40% { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { .plan-loader span { animation: none; } }
   .plan-error { color: #b91c1c; padding: 12px; margin: 0 0 12px; border: 1px solid #b91c1c; border-radius: 8px; }
-  #area-info { margin: 8px 0 0; }
-  #area-info .ahead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  #area-info { margin: 8px 0 0; cursor: pointer; }
   #area-info h3 { margin: 0; }
   #area-info .asub { color: var(--muted); font-size: 13px; margin-top: 2px; }
   #area-info .anote { color: var(--muted); font-size: 12px; font-style: italic; margin-top: 6px; }
   #area-info .asrc { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
   #area-info .asrc a { color: var(--muted); }
-  #area-info .aclose { font: inherit; font-size: 18px; line-height: 1; padding: 2px 8px; border-radius: 8px; border: 1px solid var(--btn-border); background: var(--btn); color: var(--fg); cursor: pointer; }
   #area-info dl { gap: 6px 12px; margin-top: 10px; }
   #area-info dt { white-space: nowrap; }
   @media (max-width: 700px) { #area-info dl { grid-template-columns: 1fr; gap: 2px; } #area-info dd { margin-bottom: 8px; } }
