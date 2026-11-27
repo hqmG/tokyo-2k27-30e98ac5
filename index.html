@@ -55,7 +55,6 @@
 
   .node { position: absolute; top: 180px; width: 0; cursor: pointer; }
   .node .dot { position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 50%; background: var(--dot); border: 3px solid var(--accent); }
-  .node.active .dot { background: var(--accent); }
   .node .stem { position: absolute; left: 0; width: 1px; background: var(--line); }
   .node.up .stem { bottom: 8px; }
   .node.down .stem { top: 8px; }
@@ -66,6 +65,11 @@
   .zoombar { display: flex; gap: 6px; margin: 6px 0 0; }
   .zoombar button { font: inherit; min-width: 34px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--btn-border); background: var(--btn); color: var(--fg); cursor: pointer; }
 
+  .zoombar button[aria-pressed="true"] { border-color: #ef4444; color: #ef4444; }
+  /* Min position: blinkande röd prick */
+  .me-dot { display: block; width: 14px; height: 14px; border-radius: 50%; background: #ef4444; border: 2px solid #fff; animation: me-pulse 1.4s ease-out infinite; }
+  @keyframes me-pulse { 0% { box-shadow: 0 0 0 0 rgba(239,68,68,.7); opacity: 1; } 50% { opacity: .45; } 100% { box-shadow: 0 0 0 14px rgba(239,68,68,0); opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .me-dot { animation: none; } }
   .zoombar .cities { margin-left: auto; display: flex; gap: 6px; }
 
   .pgroup { margin-bottom: 14px; }
@@ -107,11 +111,12 @@
   .tabs button { font: inherit; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--btn-border); background: var(--btn); color: var(--fg); cursor: pointer; }
   .tabs button.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
   .tabs button.active[data-type="all"], .tabs button.active[data-city="all"] { background: var(--accent); color: #fff; box-shadow: none; }
-  #detail { margin: 0 0 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
-  #detail h3 { margin: 0 0 6px; font-size: 17px; }
-  #detail dl, .pdetail { display: grid; grid-template-columns: 120px 1fr; gap: 4px 12px; margin: 8px 0 0; font-size: 14px; }
-  #detail dt, .pdetail dt { color: var(--muted); }
-  #detail dd, .pdetail dd { margin: 0; }
+  #detail, #area-info { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  #detail { margin: 0 0 8px; }
+  #detail h3, #area-info h3 { margin: 0 0 6px; font-size: 17px; }
+  #detail dl, .pdetail, #area-info dl { display: grid; grid-template-columns: 120px 1fr; gap: 4px 12px; margin: 8px 0 0; font-size: 14px; }
+  #detail dt, .pdetail dt, #area-info dt { color: var(--muted); }
+  #detail dd, .pdetail dd, #area-info dd { margin: 0; }
   .pcard:not(.active) .pdetail { display: none; }
   .plan-loader { display: flex; justify-content: center; padding: 8px 0 16px; color: var(--muted); }
   .plan-loader span { width: 8px; height: 8px; margin: 0 4px; border-radius: 50%; background: currentColor; animation: plan-dot 1.2s infinite ease-in-out; }
@@ -120,6 +125,17 @@
   @keyframes plan-dot { 0%, 80%, 100% { opacity: .2; } 40% { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { .plan-loader span { animation: none; } }
   .plan-error { color: #b91c1c; padding: 12px; margin: 0 0 12px; border: 1px solid #b91c1c; border-radius: 8px; }
+  #area-info { margin: 8px 0 0; }
+  #area-info .ahead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  #area-info h3 { margin: 0; }
+  #area-info .asub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  #area-info .anote { color: var(--muted); font-size: 12px; font-style: italic; margin-top: 6px; }
+  #area-info .asrc { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+  #area-info .asrc a { color: var(--muted); }
+  #area-info .aclose { font: inherit; font-size: 18px; line-height: 1; padding: 2px 8px; border-radius: 8px; border: 1px solid var(--btn-border); background: var(--btn); color: var(--fg); cursor: pointer; }
+  #area-info dl { gap: 6px 12px; margin-top: 10px; }
+  #area-info dt { white-space: nowrap; }
+  @media (max-width: 700px) { #area-info dl { grid-template-columns: 1fr; gap: 2px; } #area-info dd { margin-bottom: 8px; } }
   .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
 </style>
 </head>
@@ -170,8 +186,10 @@
     <button id="mapZoomOut" type="button" aria-label="Zoom out map">−</button>
     <button id="mapZoomFit" type="button" aria-label="Reset map view" title="Reset map view">○</button>
     <button id="mapZoomIn" type="button" aria-label="Zoom in map">+</button>
+    <button id="mapLocate" type="button" aria-label="Show my position" aria-pressed="false" title="Show my position">⌖</button>
     <span class="cities" id="city-zoom"></span>
   </div>
+  <div id="area-info" hidden></div>
 
   <h2>Proposals</h2>
   <div class="tabs" id="tabs"></div>
@@ -181,6 +199,7 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="config.js"></script>
+<script src="wards.js"></script>
 <script src="plan-sheet.js"></script>
 </body>
 </html>

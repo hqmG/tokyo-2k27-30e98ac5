@@ -50,11 +50,13 @@
     if (/(^|\.)tabelog\.com$/.test(host)) return 'Tabelog';
     return host.split('.').slice(-2).join('.');
   };
+  const linkHtml = u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(sourceLabel(u))} ↗</a>`;
+  // Säkra länkar som en rad, avgränsade med ·
+  const linksHtml = urls => [...new Set(urls)].filter(isSafeUrl).map(linkHtml).join(' · ');
   // Google Maps, Tabelog och bokningssidan (url, tabelog_url, booking_url) visas som länkar på samma rad
   const sourceRow = it => {
-    const links = [...new Set([it.url, it.tabelogUrl, it.bookingUrl])].filter(isSafeUrl)
-      .map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(sourceLabel(u))} ↗</a>`);
-    return links.length ? `<dt>Source</dt><dd>${links.join(' · ')}</dd>` : '';
+    const links = linksHtml([it.url, it.tabelogUrl, it.bookingUrl]);
+    return links ? `<dt>Source</dt><dd>${links}</dd>` : '';
   };
   const rowsOf = pairs => pairs.filter(([, v]) => v).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(capitalize(v))}</dd>`).join('');
 
@@ -90,6 +92,73 @@
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }).addTo(map);
+
+  // ---------- Stadsdelar ----------
+  // Områdena i config.js byggs av stadsdelsgränser (wards.js) och ritas först, så att de ligger under linjer och markörer.
+  // Panelen under kartan visar stadsdelens rad i bladets flik Areas. Påverkar inte förslagen eller filtren.
+  const WARDS = window.TOKYO_WARDS || {};
+  const WARD_FILL = 0.12, WARD_FILL_ACTIVE = 0.4;   // fyllnadens opacitet i vila och vid hovring eller val
+  const areaInfo = document.getElementById('area-info');
+  let selectedWard = null;   // { layer, region, name, areas } för stadsdelen som valts med klick
+  const setFill = (layer, active) => layer.setStyle({ fillOpacity: active ? WARD_FILL_ACTIVE : WARD_FILL });
+
+  function renderArea() {
+    if (!selectedWard) { areaInfo.hidden = true; return; }
+    const { region, name, areas } = selectedWard;
+    const info = window.AREA_INFO?.[name.toLowerCase()];   // id i fliken Areas = stadsdelens namn med små bokstäver
+    let body;
+    if (!window.AREA_INFO) body = '<p class="empty">Loading area info…</p>';
+    else if (!info) body = '<p class="empty">No area info in the sheet.</p>';
+    else {
+      const rows = Object.entries(TYPES).filter(([key]) => info[key])
+        .map(([key, t]) => `<dt><span class="swatch" style="background:${t.color}"></span>${esc(t.label)}</dt><dd>${esc(info[key])}</dd>`).join('');
+      const links = linksHtml(String(info.sources || '').split(/\s+/));
+      body = links
+        ? `<p class="anote">General info compiled from the sources below, not verified.</p><dl>${rows}</dl><p class="asrc">Sources: ${links}</p>`
+        : `<dl>${rows}</dl>`;
+    }
+    areaInfo.innerHTML = `<div class="ahead"><div>
+        <h3><span class="swatch" style="background:${region.color}"></span>${esc(name)} · ${esc(region.name)}</h3>
+        <div class="asub">${esc(areas)}</div></div>
+        <button type="button" class="aclose" aria-label="Close area info">×</button></div>${body}`;
+    areaInfo.style.borderColor = region.color;   // kortets kant i områdets färg
+    areaInfo.hidden = false;
+  }
+
+  // Klick väljer stadsdelen, zoomar in och öppnar panelen. Klick på den valda stadsdelen väljer bort den.
+  function toggleWard(entry) {
+    const deselect = selectedWard?.layer === entry.layer;
+    if (selectedWard) setFill(selectedWard.layer, false);
+    selectedWard = deselect ? null : entry;
+    setFill(entry.layer, true);   // pekaren är kvar över ytan
+    renderArea();
+    if (deselect) return;
+    if (entry.region.city) { mapCity = entry.region.city; updateVisibility(); }
+    map.fitBounds(entry.layer.getBounds(), { padding: [20, 20], animate: false });
+  }
+
+  function clearWard() {
+    if (!selectedWard) return;
+    setFill(selectedWard.layer, false);
+    selectedWard = null;
+    renderArea();
+  }
+
+  if (Object.keys(WARDS).length) map.attributionControl.addAttribution('Ward boundaries: <a href="https://www.gsi.go.jp/kankyochiri/gm_jpn.html">Global Map Japan (GSI)</a>');
+  (window.CONFIG.regions || []).forEach(region => Object.entries(region.wards || {}).forEach(([code, areas]) => {
+    const w = WARDS[code];
+    if (!w) return;
+    const layer = L.polygon(w.rings, { color: region.color, weight: 1.5, opacity: 0.8, fillColor: region.color, fillOpacity: WARD_FILL })
+      .bindTooltip(`<b>${esc(w.name)}</b> · ${esc(region.name)}<br>${esc(areas)}`, { sticky: true })
+      .addTo(map);
+    const entry = { layer, region, name: w.name, areas };
+    // Hovring gör ytan mindre transparent. En vald stadsdel behåller markeringen tills den väljs bort.
+    layer.on('mouseover', () => setFill(layer, true));
+    layer.on('mouseout', () => { if (selectedWard?.layer !== layer) setFill(layer, false); });
+    layer.on('click', () => toggleWard(entry));
+  }));
+  areaInfo.addEventListener('click', e => { if (e.target.closest('.aclose')) clearWard(); });
+  document.addEventListener('areas-loaded', renderArea);   // fliken Areas laddas separat och kan komma efter ett klick
 
   // Flyglinjer: osynliga tills de väljs. Den breda träffytan ligger ovanpå så att linjen är lätt att klicka på.
   const flightLines = {};
@@ -149,6 +218,36 @@
   document.getElementById('mapZoomIn').addEventListener('click', () => map.zoomIn());
   document.getElementById('mapZoomOut').addEventListener('click', () => map.zoomOut());
   document.getElementById('mapZoomFit').addEventListener('click', homeView);
+  // Min position: blinkande röd prick som följer positionen. Startas och stängs med knappen.
+  // Positionen visas bara i webbläsaren och sparas eller skickas ingenstans.
+  const locateBtn = document.getElementById('mapLocate');
+  const meIcon = L.divIcon({ className: '', html: '<span class="me-dot"></span>', iconSize: [18, 18], iconAnchor: [9, 9] });
+  let watchId = null, meMarker = null;
+  function stopLocate(message = 'Show my position') {
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+    meMarker?.remove();
+    meMarker = null;
+    locateBtn.setAttribute('aria-pressed', 'false');
+    locateBtn.title = message;
+  }
+  locateBtn.addEventListener('click', () => {
+    if (watchId !== null) { stopLocate(); return; }
+    if (!('geolocation' in navigator)) { locateBtn.title = 'Position is not available in this browser'; return; }
+    locateBtn.setAttribute('aria-pressed', 'true');
+    locateBtn.title = 'Hide my position';
+    let centered = false;   // kartan centreras på första positionen, sedan flyttas bara pricken
+    watchId = navigator.geolocation.watchPosition(pos => {
+      const ll = [pos.coords.latitude, pos.coords.longitude];
+      if (meMarker) meMarker.setLatLng(ll);
+      else meMarker = L.marker(ll, { icon: meIcon, interactive: false, keyboard: false, zIndexOffset: 1000 }).addTo(map);
+      if (!centered) { map.setView(ll, Math.max(map.getZoom(), 15), { animate: false }); centered = true; }
+    }, err => {
+      console.warn('Position kunde inte hämtas:', err.message);
+      stopLocate(`Position unavailable (${err.message})`);
+    }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 });
+  });
+
   // Zoomar in på stadens centrum (mitt i kartan) och visar alla noder som hör till staden
   function zoomToCity(city) {
     const [cLat, cLng] = CITY_CENTERS[city];

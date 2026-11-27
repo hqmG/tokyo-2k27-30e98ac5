@@ -1,7 +1,7 @@
 // Läser planen från Google Sheets (fliken "Plan"). Enda datakällan: om bladet inte går att läsa visas ett felmeddelande.
 // Kolumnerna matchas på rubrikraden i bladet, så kolumner kan flyttas eller läggas till utan att koden ändras.
 (() => {
-  const { id: SHEET_ID, name: SHEET_NAME } = window.CONFIG.sheet;   // från config.js
+  const { id: SHEET_ID, name: SHEET_NAME, areas: AREAS_NAME } = window.CONFIG.sheet;   // från config.js
   const TIMEOUT_MS = 30000;
   const CALLBACK = '__onPlanData';
 
@@ -33,9 +33,15 @@
     return row.c.map(cell => String(cell?.v ?? '').trim());
   }
 
-  // Gör om en rad till det format som index.js använder
-  function toItem(row, header) {
-    const f = Object.fromEntries(header.map((name, i) => [name, cellText(row.c[i])]));
+  // Bladets rader som objekt med rubrikerna som nycklar. Rubrikraden och rader utan id hoppas över.
+  function recordsOf(table) {
+    const header = headerOf(table);
+    return table.rows.filter(r => r.c?.[0]?.v && r.c[0].v !== 'id')
+      .map(r => Object.fromEntries(header.map((name, i) => [name, cellText(r.c[i])])));
+  }
+
+  // Gör om en rad i Plan till det format som index.js använder
+  function toItem(f) {
     const lat = num(f.latitude), lng = num(f.longitude);
     const item = {
       id: f.id, typ: f.type, namn: f.name, status: f.status, dag: f.date,
@@ -53,6 +59,9 @@
     if (f.to_code) item.till = { kod: f.to_code, lat: num(f.to_latitude), lng: num(f.to_longitude) };
     return item;
   }
+
+  const gvizUrl = (sheet, callback) =>
+    `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=responseHandler:${callback}&sheet=${encodeURIComponent(sheet)}`;
 
   function loadScript(src, onError) {
     const s = document.createElement('script');
@@ -88,9 +97,7 @@
     if (loaded) return;
     clearTimeout(timer);
     try {
-      const header = headerOf(response.table);
-      const rows = response.table.rows.filter(r => r.c?.[0]?.v && r.c[0].v !== 'id');
-      window.PLAN_ITEMS = rows.map(r => toItem(r, header));
+      window.PLAN_ITEMS = recordsOf(response.table).map(toItem);
     } catch (e) {
       fail(`kunde inte tolka svaret: ${e.message}`);
       return;
@@ -101,6 +108,19 @@
     loadScript('index.js');
   };
 
-  loadScript(`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=responseHandler:${CALLBACK}&sheet=${encodeURIComponent(SHEET_NAME)}`,
-    () => { clearTimeout(timer); fail('skriptet kunde inte laddas'); });
+  // Områdesinformation (fliken Areas) läses för sig. Om den inte kan läsas fungerar resten av appen som vanligt.
+  if (AREAS_NAME) {
+    window.__onAreasData = response => {
+      try {
+        window.AREA_INFO = Object.fromEntries(recordsOf(response.table).map(f => [f.id, f]));
+      } catch (e) {
+        console.warn('Fliken Areas kunde inte tolkas:', e.message);
+        window.AREA_INFO = {};
+      }
+      document.dispatchEvent(new Event('areas-loaded'));
+    };
+    loadScript(gvizUrl(AREAS_NAME, '__onAreasData'), () => console.warn('Fliken Areas kunde inte laddas'));
+  }
+
+  loadScript(gvizUrl(SHEET_NAME, CALLBACK), () => { clearTimeout(timer); fail('skriptet kunde inte laddas'); });
 })();
