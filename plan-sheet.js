@@ -6,10 +6,13 @@
   const CALLBACK = '__onPlanData';
 
   const pad = n => String(n).padStart(2, '0');
+  // Länkkolumner (sources) innehåller länkar avgränsade med mellanslag eller radbrytning
+  const linkList = s => String(s || '').split(/\s+/).filter(Boolean);
   // Tal kan komma som text med decimalkomma (svensk locale), t.ex. "55,612013"
+  // Saknade kolumner ger undefined i stället för fel, så att bladet kan sakna kolumner som en kategori inte använder
   const num = s => {
-    if (s === '') return undefined;
-    const n = Number(s.replace(',', '.'));
+    if (s == null || s === '') return undefined;
+    const n = Number(String(s).replace(',', '.'));
     return Number.isFinite(n) ? n : undefined;
   };
 
@@ -49,7 +52,7 @@
       utc: num(f.utc_offset) ?? 0, slututc: num(f.end_utc_offset) ?? 0,
       stad: f.city, summary: f.summary, adress: f.address,
       rating: num(f.rating), ratingCount: num(f.rating_count), pris: f.price,
-      oppettider: f.opening_hours, description: f.description, review: f.review, anteckn: f.notes, url: f.url, tabelogUrl: f.tabelog_url, bookingUrl: f.booking_url
+      oppettider: f.opening_hours, description: f.description, review: f.review, anteckn: f.notes, googleUrl: f.google_url, bookingUrl: f.booking_url, sources: linkList(f.sources)
     };
     if (f.end_date) item.slutdag = f.end_date;
     // Transport: latitude/longitude är avreseplatsen, to_latitude/to_longitude ankomstplatsen.
@@ -112,7 +115,7 @@
   if (AREAS_NAME) {
     window.__onAreasData = response => {
       try {
-        window.AREA_INFO = Object.fromEntries(recordsOf(response.table).map(f => [f.id, f]));
+        window.AREA_INFO = Object.fromEntries(recordsOf(response.table).map(f => [f.id, { ...f, sources: linkList(f.sources) }]));
       } catch (e) {
         console.warn('Fliken Areas kunde inte tolkas:', e.message);
         window.AREA_INFO = {};

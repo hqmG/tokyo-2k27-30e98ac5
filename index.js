@@ -23,10 +23,6 @@
   const isFlight = it => Boolean(it.fran && it.till);
   const groupOf = it => TYPES[it.typ] ? it.typ : 'other';   // okända typer visas som Other
   const colorOf = it => TYPES[groupOf(it)].color;
-  // Länkar från bladet visas bara om de är giltiga https-adresser (skydd mot javascript:-länkar och trasiga adresser)
-  const isSafeUrl = u => {
-    try { return new URL(u).protocol === 'https:'; } catch { return false; }
-  };
   // En händelse hör till en stad via sitt stadsfält, ett flyg via någon av sina flygplatser
   const inCity = (it, city) => it.stad === city || (isFlight(it) && (CITY_AIRPORTS[city] || []).some(k => touches(it, k)));
 
@@ -43,19 +39,23 @@
   // Ankomstdagen visas när den skiljer sig från avgångsdagen, t.ex. "14:00 → 10:25 (9 June)"
   const arrivalDay = it => it.slutdag && it.slutdag !== it.dag ? ` (${dayLabel(it.slutdag)})` : '';
   const rangeOf = it => (it.starttid || '') + (it.sluttid ? ` → ${it.sluttid}${arrivalDay(it)}` : '');
-  // Länkens etikett följer webbplatsen, t.ex. "Google Maps", "Tabelog" eller "booking.com"
-  const sourceLabel = url => {
-    const host = new URL(url).hostname;
-    if (/(^|\.)google\.[a-z.]+$/.test(host)) return 'Google Maps';
-    if (/(^|\.)tabelog\.com$/.test(host)) return 'Tabelog';
-    return host.split('.').slice(-2).join('.');
+  // Länkar från bladet visas bara om de är giltiga https-adresser (skydd mot javascript:-länkar och trasiga adresser)
+  const httpsUrl = u => {
+    try { const url = new URL(u); return url.protocol === 'https:' ? url : null; } catch { return null; }
   };
-  const linkHtml = u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(sourceLabel(u))} ↗</a>`;
-  // Säkra länkar som en rad, avgränsade med ·
-  const linksHtml = urls => [...new Set(urls)].filter(isSafeUrl).map(linkHtml).join(' · ');
-  // Google Maps, Tabelog och bokningssidan (url, tabelog_url, booking_url) visas som länkar på samma rad
+  // Länkens etikett är domänen, t.ex. "maps.google.com" (alla Google-länkar), "tabelog.com" eller "yahoo.co.jp"
+  const domainOf = ({ hostname }) => {
+    if (/(^|\.)google\.[a-z.]+$/.test(hostname)) return 'maps.google.com';
+    const parts = hostname.split('.');
+    return parts.slice(/^(co|com|or|ne|ac|go)$/.test(parts.at(-2)) ? -3 : -2).join('.');   // yahoo.co.jp, inte co.jp
+  };
+  // Unika, säkra länkar på en rad, avgränsade med ·
+  const linksHtml = urls => [...new Set(urls)].map(httpsUrl).filter(Boolean)
+    .map(url => `<a href="${esc(url.href)}" target="_blank" rel="noopener noreferrer">${esc(domainOf(url))} ↗</a>`)
+    .join(' · ');
+  // Källraden har fast ordning: google_url, booking_url och sedan kolumnen sources (Tabelog och tredjepartskällor)
   const sourceRow = it => {
-    const links = linksHtml([it.url, it.tabelogUrl, it.bookingUrl]);
+    const links = linksHtml([it.googleUrl, it.bookingUrl, ...it.sources]);
     return links ? `<dt>Source</dt><dd>${links}</dd>` : '';
   };
   const rowsOf = pairs => pairs.filter(([, v]) => v).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(capitalize(v))}</dd>`).join('');
@@ -112,7 +112,7 @@
     else {
       const rows = Object.entries(TYPES).filter(([key]) => info[key])
         .map(([key, t]) => `<dt><span class="swatch" style="background:${t.color}"></span>${esc(t.label)}</dt><dd>${esc(info[key])}</dd>`).join('');
-      const links = linksHtml(String(info.sources || '').split(/\s+/));
+      const links = linksHtml(info.sources);
       body = links
         ? `<p class="anote">General info compiled from the sources below, not verified.</p><dl>${rows}</dl><p class="asrc">Sources: ${links}</p>`
         : `<dl>${rows}</dl>`;
